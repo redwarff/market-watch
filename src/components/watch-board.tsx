@@ -92,6 +92,14 @@ export function WatchBoard() {
     return (rows ?? []).filter((row) => `${row.symbol} ${row.name}`.toLowerCase().includes(needle));
   }, [rows, query]);
 
+  function move(symbol: string, direction: -1 | 1) {
+    if (!rows) return;
+    const index = rows.findIndex((row) => row.symbol === symbol);
+    const target = rows[index + direction];
+    if (!target) return;
+    reorder(symbol, target.symbol);
+  }
+
   function reorder(from: string, to: string) {
     if (!rows || from === to) return;
     const next = [...rows];
@@ -163,7 +171,8 @@ export function WatchBoard() {
           </button>
         </div>
       ) : (
-        <div className="panel table-scroll">
+        <>
+        <div className="panel table-scroll watch-table">
           <table className="data">
             <thead>
               <tr>
@@ -282,6 +291,20 @@ export function WatchBoard() {
             </tbody>
           </table>
         </div>
+        <div className="panel watch-cards">
+          {shown.map((row) => (
+            <QuoteCard
+              key={row.id}
+              row={row}
+              canUp={rows != null && rows[0]?.symbol !== row.symbol}
+              canDown={rows != null && rows[rows.length - 1]?.symbol !== row.symbol}
+              onOpen={() => router.push(`/ticker/${row.symbol}`)}
+              onMove={(direction) => move(row.symbol, direction)}
+            />
+          ))}
+          {rows && shown.length === 0 ? <p className="muted quote-empty">No symbols match.</p> : null}
+        </div>
+        </>
       )}
 
       {adding ? (
@@ -302,6 +325,101 @@ export function WatchBoard() {
         ))}
       </div>
     </>
+  );
+}
+
+function QuoteCard({
+  row,
+  canUp,
+  canDown,
+  onOpen,
+  onMove,
+}: {
+  row: WatchRow;
+  canUp: boolean;
+  canDown: boolean;
+  onOpen: () => void;
+  onMove: (direction: -1 | 1) => void;
+}) {
+  const change = changeOf(row.price, row.prevClose);
+  return (
+    <article
+      className={`quote ${row.muted ? 'dim' : ''}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') onOpen();
+      }}
+      tabIndex={0}
+    >
+      <div className="nudge">
+        <button
+          type="button"
+          aria-label={`Move ${row.symbol} up`}
+          disabled={!canUp}
+          onClick={(event) => {
+            event.stopPropagation();
+            onMove(-1);
+          }}
+        >
+          ↑
+        </button>
+        <button
+          type="button"
+          aria-label={`Move ${row.symbol} down`}
+          disabled={!canDown}
+          onClick={(event) => {
+            event.stopPropagation();
+            onMove(1);
+          }}
+        >
+          ↓
+        </button>
+      </div>
+      <div className="quote-main">
+        <div className="quote-id">
+          <div className="num sym">{row.symbol}</div>
+          <div className="name">{row.name || row.symbol}</div>
+          {row.dates.length > 0 ? (
+            <div className="symbol-dates">
+              {row.dates.map((date) => (
+                <span key={date.id} className={date.urgent ? 'tag impact-high' : 'tag'}>
+                  {date.text}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="quote-px">
+          <div className="num last">{formatPrice(row.price)}</div>
+          <div className={`num chg ${tone(change.pct)}`}>
+            {formatSignedMoney(change.abs)} {formatPct(change.pct)}
+          </div>
+        </div>
+        {row.extended ? (
+          <div className="ext quote-ext">
+            {sessionLabel(row.extended.kind)} {formatPrice(row.extended.price)}
+            <span className={tone(row.extended.pct)}>{formatPct(row.extended.pct)}</span>
+          </div>
+        ) : null}
+        <div className="quote-meta num">
+          <span>
+            <DayBar low={row.low} high={row.high} price={row.price} />
+            {row.low != null && row.high != null ? `${formatPrice(row.low)}–${formatPrice(row.high)}` : '—'}
+          </span>
+          <span>Vol {formatCompact(row.volume)}</span>
+        </div>
+        <div className="tags quote-tags">
+          {row.muted ? <span className="tag">Muted</span> : null}
+          {row.armedAlerts > 0 ? <span className="tag">{row.armedAlerts} armed</span> : null}
+          {row.firedToday.map((kind) => (
+            <span className="tag" key={kind}>
+              {KIND_LABEL[kind]}
+            </span>
+          ))}
+          {row.ts ? <span className="tag">{formatAgo(row.ts)}</span> : null}
+        </div>
+      </div>
+    </article>
   );
 }
 
