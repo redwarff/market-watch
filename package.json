@@ -1,0 +1,26 @@
+{
+  "name": "market",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "node --experimental-sqlite --disable-warning=ExperimentalWarning ./node_modules/next/dist/bin/next dev",
+    "build": "next build",
+    "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning ./node_modules/next/dist/bin/next start",
+    "test": "tsx --test src/server/*.test.ts"
+  },
+  "dependencies": {
+    "jose": "^6.1.0",
+    "lightweight-charts": "4.2.2",
+    "next": "^15.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}
