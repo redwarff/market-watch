@@ -1,5 +1,8 @@
 import { repo } from '@/db';
+import { isFuture } from '@/lib/futures';
+import type { Quote } from '@/lib/types';
 import { FinnhubClient } from '@/providers/finnhub';
+import { YahooHistory } from '@/providers/yahoo';
 import { bus } from '@/server/bus';
 import { readSession } from '@/server/auth';
 import { jsonError, readJson, zodMessage } from '@/server/http';
@@ -16,21 +19,29 @@ export async function POST(request: Request) {
   const symbol = cleanSymbol(parsed.data.symbol);
   if (!isSymbol(symbol)) return jsonError('Enter a US ticker symbol.', 400);
   if (repo.getTicker(symbol)) return jsonError('That ticker is already on the watch.', 409);
+  const future = isFuture(symbol);
   const finnhub = new FinnhubClient();
-  if (!finnhub.configured) {
+  if (!future && !finnhub.configured) {
     return jsonError('Add FINNHUB_API_KEY to the server environment and restart.', 400);
   }
-  let quote;
+  let quote: Quote | null;
+  let volume: number | null = null;
   try {
-    quote = await finnhub.quote(symbol);
+    if (future) {
+      const priced = await new YahooHistory().futureQuote(symbol);
+      quote = priced;
+      volume = priced?.volume ?? null;
+    } else {
+      quote = await finnhub.quote(symbol);
+    }
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : 'Quote failed.', 502);
   }
-  if (!quote) return jsonError('No US quote for that symbol.', 404);
+  if (!quote) return jsonError(future ? 'No futures quote for that symbol.' : 'No US quote for that symbol.', 404);
   const ticker = {
     id: crypto.randomUUID(),
     symbol,
-    venue: 'US' as const,
+    venue: future ? 'FUT' : 'US',
     name: (parsed.data.name || symbol).trim() || symbol,
     notes: '',
     muted: false,
@@ -52,7 +63,7 @@ export async function POST(request: Request) {
     open: quote.open,
     high: quote.high,
     low: quote.low,
-    volume: null,
+    volume,
     ts: quote.ts,
     source: 'finnhub-quote',
     extended: null,

@@ -1,4 +1,4 @@
-import type { CandleBar, CompanyDate, ExtendedQuote, StatementRow } from '@/lib/types';
+import type { CandleBar, CompanyDate, ExtendedQuote, Quote, StatementRow } from '@/lib/types';
 import { dividendsFromYahoo } from '@/server/dates';
 import { Pacer } from '@/server/pacer';
 import type { HistorySource } from './types';
@@ -15,6 +15,10 @@ const CHARTS = {
 
 function yahooSymbol(symbol: string): string {
   return symbol.replace('.', '-');
+}
+
+function yahooPath(symbol: string): string {
+  return encodeURIComponent(yahooSymbol(symbol)).replace(/%3D/gi, '=');
 }
 
 function rawNum(value: unknown): number | null {
@@ -101,14 +105,57 @@ export class YahooHistory implements HistorySource {
     return pacer.run(() => this.companyCalendar(symbol));
   }
 
+  /** Front-month futures quote. The chart metadata is the last, the prior settle, and the session range. */
+  futureQuote(symbol: string): Promise<(Quote & { volume: number | null }) | null> {
+    return pacer.run(() => this.frontQuote(symbol));
+  }
+
   /** Regular session stays on Finnhub. This is only the pre-market or after-hours print. */
   extendedQuote(symbol: string): Promise<ExtendedQuote | null> {
     return pacer.run(() => this.sessionQuote(symbol));
   }
 
+  private async frontQuote(symbol: string): Promise<(Quote & { volume: number | null }) | null> {
+    const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooPath(symbol)}`);
+    url.searchParams.set('interval', '1d');
+    url.searchParams.set('range', '1d');
+    const response = await this.fetchYahoo(url);
+    const body = (await response.json()) as {
+      chart?: {
+        error?: { description?: string };
+        result?: {
+          meta?: {
+            regularMarketPrice?: number;
+            chartPreviousClose?: number;
+            previousClose?: number;
+            regularMarketDayHigh?: number;
+            regularMarketDayLow?: number;
+            regularMarketVolume?: number;
+            regularMarketTime?: number;
+          };
+        }[];
+      };
+    };
+    if (body.chart?.error) throw new Error(body.chart.error.description || 'Yahoo futures quote failed.');
+    const meta = body.chart?.result?.[0]?.meta;
+    const price = finite(meta?.regularMarketPrice);
+    const ts = seconds(meta?.regularMarketTime);
+    if (price == null || price <= 0 || ts == null) return null;
+    const previous = finite(meta?.chartPreviousClose) ?? finite(meta?.previousClose);
+    return {
+      price,
+      prevClose: previous != null && previous > 0 ? previous : null,
+      open: null,
+      high: finite(meta?.regularMarketDayHigh),
+      low: finite(meta?.regularMarketDayLow),
+      ts,
+      volume: finite(meta?.regularMarketVolume),
+    };
+  }
+
   private async chart(symbol: string, interval: string, range: string): Promise<{ bars: CandleBar[]; volume: number | null }> {
     await this.session();
-    const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol(symbol))}`);
+    const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${yahooPath(symbol)}`);
     url.searchParams.set('interval', interval);
     url.searchParams.set('range', range);
     url.searchParams.set('includePrePost', 'false');
@@ -153,7 +200,7 @@ export class YahooHistory implements HistorySource {
   private async companyCalendar(symbol: string): Promise<CompanyDate[]> {
     await this.session();
     const url = new URL(
-      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol(symbol))}`,
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooPath(symbol)}`,
     );
     url.searchParams.set('modules', 'calendarEvents');
     url.searchParams.set('crumb', this.crumb);
@@ -197,7 +244,7 @@ export class YahooHistory implements HistorySource {
   private async summary(symbol: string): Promise<{ description: string; rows: StatementRow[] }> {
     await this.session();
     const url = new URL(
-      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(yahooSymbol(symbol))}`,
+      `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${yahooPath(symbol)}`,
     );
     url.searchParams.set('modules', 'assetProfile,incomeStatementHistory,balanceSheetHistory');
     url.searchParams.set('crumb', this.crumb);

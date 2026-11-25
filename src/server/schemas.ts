@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isFuture } from '@/lib/futures';
 
 export const loginSchema = z.object({
   password: z.string().min(1, 'Enter the password.').max(200),
@@ -38,5 +39,6 @@ export function cleanSymbol(input: string): string {
 }
 
 export function isSymbol(symbol: string): boolean {
+  if (isFuture(symbol)) return true;
   return /^[A-Z][A-Z0-9.-]{0,9}$/.test(symbol);
 }

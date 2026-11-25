@@ -4,6 +4,7 @@ import { evaluate, type EvalAction } from '@/server/alerts';
 import { bus } from '@/server/bus';
 import { alertMessage } from '@/server/messages';
 import { settingsFromMap } from '@/server/settings';
+import { futureSessionOpen, isFuture } from '@/lib/futures';
 import { etDayKey, etDayStartMs, isAfterClose, isIntradayWindow, isRegularPrint, isRegularSession } from '@/server/time';
 import { sleep } from '@/server/pacer';
 import { ensureCalendar } from '@/server/calendar';
@@ -220,6 +221,12 @@ class Engine {
   private async runJob(symbol: string, kind: JobKind) {
     const ticker = repo.getTicker(symbol);
     if (!ticker) return;
+    if (isFuture(ticker.symbol)) {
+      if (kind === 'full' || kind === 'charts') await this.jobCharts(ticker);
+      if (kind === 'daily') await this.jobDaily(ticker, true);
+      if (kind === 'full') await this.jobDaily(ticker, false);
+      return;
+    }
     if (kind === 'full' || kind === 'dates') await this.jobDates(ticker, kind === 'full');
     if (kind === 'full' || kind === 'session') await this.jobSession(ticker);
     if (kind === 'full' || kind === 'profile') await this.jobProfile(ticker);
@@ -372,21 +379,29 @@ class Engine {
   }
 
   private async refreshQuotes() {
-    if (!this.finnhub.configured) {
+    const symbols = [...this.lives.keys()];
+    if (!this.finnhub.configured && !symbols.some(isFuture)) {
       repo.setCache('finnhub.quotes', { ok: false, detail: 'Finnhub API key is not set.', updatedAt: Date.now() });
       return;
     }
     let ok = 0;
     let failed = 0;
-    for (const symbol of this.lives.keys()) {
+    for (const symbol of symbols) {
       try {
-        const quote = await this.finnhub.quote(symbol);
-        if (!quote) continue;
-        this.applyQuote(symbol, quote);
+        if (isFuture(symbol)) {
+          const quote = await this.yahoo.futureQuote(symbol);
+          if (!quote) continue;
+          this.applyFutureQuote(symbol, quote);
+        } else {
+          if (!this.finnhub.configured) continue;
+          const quote = await this.finnhub.quote(symbol);
+          if (!quote) continue;
+          this.applyQuote(symbol, quote);
+        }
         ok += 1;
       } catch (error) {
         failed += 1;
-        console.error(`[finnhub] ${symbol}:`, errorMessage(error));
+        console.error(`[quote] ${symbol}:`, errorMessage(error));
       }
     }
     repo.setCache('finnhub.quotes', {
@@ -403,7 +418,10 @@ class Engine {
       return;
     }
     try {
-      const posts = await reddit.fetchMentions([...this.lives.keys()], this.settings.subreddits);
+      const posts = await reddit.fetchMentions(
+        [...this.lives.keys()].filter((symbol) => !isFuture(symbol)),
+        this.settings.subreddits,
+      );
       const grouped = new Map<string, typeof posts>();
       for (const post of posts) {
         const list = grouped.get(post.symbol) ?? [];
@@ -439,7 +457,7 @@ class Engine {
         bus.emit('status', { ws: state, detail });
       },
     );
-    this.stream.start([...this.lives.keys()]);
+    this.stream.start([...this.lives.keys()].filter((symbol) => !isFuture(symbol)));
   }
 
   private onTrade(trade: { symbol: string; price: number; ts: number }) {
@@ -494,6 +512,36 @@ class Engine {
     this.persist(live);
   }
 
+  private applyFutureQuote(
+    symbol: string,
+    quote: { price: number; prevClose: number | null; open: number | null; high: number | null; low: number | null; ts: number; volume: number | null },
+  ) {
+    const live = this.lives.get(symbol);
+    if (!live) return;
+    const quoteDay = etDayKey(new Date(quote.ts));
+    const sameSession = live.ts != null && etDayKey(new Date(live.ts)) === quoteDay;
+    live.quoteDay = quoteDay;
+    live.prevClose = quote.prevClose ?? live.prevClose;
+    live.volume = quote.volume ?? live.volume;
+    if (!sameSession) {
+      live.open = quote.open ?? quote.price;
+      live.high = quote.high;
+      live.low = quote.low;
+      live.price = quote.price;
+      live.ts = quote.ts;
+    } else if (live.ts == null || live.ts <= quote.ts) {
+      live.open = quote.open ?? live.open;
+      live.high = quote.high ?? live.high;
+      live.low = quote.low ?? live.low;
+      live.price = quote.price;
+      live.ts = quote.ts;
+    }
+    if (live.price != null && live.ts != null && futureSessionOpen(live.ts)) this.sample(live, live.ts, live.price);
+    this.evaluateNow(live);
+    this.scheduleEmit(live);
+    this.persist(live);
+  }
+
   private scheduleEval(live: Live) {
     if (live.evalTimer) return;
     live.evalTimer = setTimeout(() => {
@@ -517,13 +565,15 @@ class Engine {
       prevClose: live.prevClose,
       now: Date.now(),
       muted: live.muted,
-      sessionOpen: isRegularSession() && live.ts != null && isRegularPrint(live.ts),
+      sessionOpen: isFuture(live.symbol)
+        ? live.ts != null && futureSessionOpen(live.ts)
+        : isRegularSession() && live.ts != null && isRegularPrint(live.ts),
       dailyReady: live.quoteDay === day,
       dailyThreshold: live.dailyMovePct ?? this.settings.dailyMovePct,
       suddenThreshold: live.suddenMovePct ?? this.settings.suddenMovePct,
       windowMs: this.settings.suddenWindowMinutes * 60 * 1000,
       cooldownMs: this.settings.suddenCooldownMinutes * 60 * 1000,
-      ticks: live.ticks.filter((tick) => isRegularPrint(tick.ts)),
+      ticks: isFuture(live.symbol) ? live.ticks : live.ticks.filter((tick) => isRegularPrint(tick.ts)),
       alerts: repo.listAlerts(live.id).map((alert) => ({
         id: alert.id,
         direction: alert.direction,
@@ -591,7 +641,7 @@ class Engine {
   }
 
   private sample(live: Live, ts: number, price: number) {
-    if (!isRegularPrint(ts)) return;
+    if (isFuture(live.symbol) ? !futureSessionOpen(ts) : !isRegularPrint(ts)) return;
     if (ts - live.lastMemSample >= 5000) {
       live.ticks.push({ ts, price });
       live.lastMemSample = ts;
@@ -682,8 +732,10 @@ class Engine {
       volume: snapshot?.volume ?? null,
       ts: snapshot?.ts ?? null,
       extended: snapshot?.extended ?? null,
-      quoteDay,
-      ticks: repo.ticksSince(ticker.id, now - 2 * 60 * 60 * 1000).filter((tick) => isRegularPrint(tick.ts)),
+      quoteDay: isFuture(ticker.symbol) && snapshot?.ts && etDayKey(new Date(snapshot.ts)) === today ? today : quoteDay,
+      ticks: repo
+        .ticksSince(ticker.id, now - 2 * 60 * 60 * 1000)
+        .filter((tick) => (isFuture(ticker.symbol) ? futureSessionOpen(tick.ts, now) : isRegularPrint(tick.ts))),
       lastMemSample: 0,
       lastDbSample: 0,
       firedDay: today,
@@ -705,7 +757,7 @@ class Engine {
       return;
     }
     this.lives.set(symbol, this.createLive(ticker));
-    this.stream?.subscribe(symbol);
+    if (!isFuture(symbol)) this.stream?.subscribe(symbol);
     this.enqueue(symbol, 'full');
   }
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { FUTURES } from '@/lib/futures';
 import { changeOf, formatAgo, formatCompact, formatPct, formatPrice, formatSignedMoney, sessionLabel, tone } from '@/lib/format';
 import type { AlertKind, WatchRow } from '@/lib/types';
 import { useStream, type StreamEvent } from './use-stream';
@@ -193,9 +194,9 @@ export function WatchBoard() {
                   <tr
                     key={row.id}
                     className={`clickable ${row.muted ? 'dim' : ''} ${overSymbol === row.symbol && dragSymbol ? 'drop-target' : ''}`}
-                    onClick={() => router.push(`/ticker/${row.symbol}`)}
+                    onClick={() => router.push(`/ticker/${encodeURIComponent(row.symbol)}`)}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter') router.push(`/ticker/${row.symbol}`);
+                      if (event.key === 'Enter') router.push(`/ticker/${encodeURIComponent(row.symbol)}`);
                     }}
                     onDragOver={(event) => {
                       const from = dragSymbolRef.current;
@@ -298,7 +299,7 @@ export function WatchBoard() {
               row={row}
               canUp={rows != null && rows[0]?.symbol !== row.symbol}
               canDown={rows != null && rows[rows.length - 1]?.symbol !== row.symbol}
-              onOpen={() => router.push(`/ticker/${row.symbol}`)}
+              onOpen={() => router.push(`/ticker/${encodeURIComponent(row.symbol)}`)}
               onMove={(direction) => move(row.symbol, direction)}
             />
           ))}
@@ -510,6 +511,19 @@ function AddDialog({ onClose, onAdded }: { onClose: () => void; onAdded: () => v
           onChange={(event) => setQuery(event.target.value)}
           aria-label="Search symbols"
         />
+        <div className="range" style={{ marginTop: '0.7rem' }}>
+          {FUTURES.map((item) => (
+            <button
+              key={item.symbol}
+              className="btn"
+              type="button"
+              disabled={pending === item.symbol}
+              onClick={() => void add(item.symbol, item.name)}
+            >
+              {pending === item.symbol ? 'Adding…' : item.name}
+            </button>
+          ))}
+        </div>
         {error ? <p className="error">{error}</p> : null}
         <div style={{ marginTop: '0.6rem' }}>
           {results.map((result) => (
