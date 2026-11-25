@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "dev": "node --experimental-sqlite --disable-warning=ExperimentalWarning ./node_modules/next/dist/bin/next dev",
+    "dev": "node --experimental-sqlite --use-system-ca --disable-warning=ExperimentalWarning ./node_modules/next/dist/bin/next dev",
     "build": "next build",
-    "start": "node --experimental-sqlite --disable-warning=ExperimentalWarning ./node_modules/next/dist/bin/next start",
+    "start": "node --experimental-sqlite --use-system-ca --disable-warning=ExperimentalWarning ./node_modules/next/dist/bin/next start",
     "test": "tsx --test src/server/*.test.ts"
   },
   "dependencies": {

@@ -12,6 +12,7 @@ type Payload = {
   updatedAt: number | null;
   attribution: string;
   error: string | null;
+  changed: boolean;
 };
 
 type Filter = 'high' | 'notable' | 'all';
@@ -21,8 +22,27 @@ const IMPACT: Record<MacroImpact, string> = { high: 'High', med: 'Medium', low: 
 export function CalendarBoard() {
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [fetching, setFetching] = useState(false);
   const [filter, setFilter] = useState<Filter>('notable');
   const [open, setOpen] = useState<string | null>(null);
+
+  async function fetchPrints() {
+    setFetching(true);
+    setNotice('');
+    setError('');
+    try {
+      const body = await api<Payload>('/api/calendar', { method: 'POST' });
+      setPayload(body);
+      setNotice(
+        body.error ? '' : body.changed ? 'Prints updated. Open a row for the summary.' : 'The feed has no new print yet.',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not fetch the latest prints.');
+    } finally {
+      setFetching(false);
+    }
+  }
 
   useEffect(() => {
     let stop = false;
@@ -72,7 +92,11 @@ export function CalendarBoard() {
             {label}
           </button>
         ))}
+        <button className="btn" type="button" disabled={!payload || fetching} onClick={() => void fetchPrints()}>
+          {fetching ? 'Fetching…' : 'Fetch latest prints'}
+        </button>
       </div>
+      {notice ? <p className="muted">{notice}</p> : null}
 
       {error ? <p className="error">{error}</p> : null}
       {payload?.error && payload.events.length > 0 ? <div className="banner">{payload.error}</div> : null}
@@ -119,6 +143,7 @@ export function CalendarBoard() {
                           <span className={`tag impact-${event.importance}`}>{IMPACT[event.importance]}</span>
                         </div>
                         <div className="muted">
+                          {event.topic ? `${event.topic} · ` : ''}
                           {event.period || 'US'}
                           {upcoming ? ' · Upcoming' : ''}
                         </div>

@@ -283,6 +283,7 @@ export type MacroRelease = {
 export type MacroEvent = MacroRelease & {
   about: string;
   affects: string;
+  topic: string | null;
   report: ReportNote | null;
 };
 

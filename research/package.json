@@ -1,0 +1,14 @@
+{
+  "name": "market-research",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "study": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx src/run.ts",
+    "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --import tsx --test src/framework.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2"
+  }
+}

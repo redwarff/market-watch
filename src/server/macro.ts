@@ -232,6 +232,14 @@ export function explainRelease(name: string): MacroGuide {
   return FALLBACK;
 }
 
+/** Short label for the price releases people scan for on an inflation day. */
+export function releaseTopic(name: string): string | null {
+  if (/^cpi\b|consumer price index|^ppi\b|producer price index|\bpce\b|personal income and outlays|import and export price/i.test(name)) {
+    return 'Inflation';
+  }
+  return null;
+}
+
 export function formatPrint(value: string | null, unit: string): string {
   if (value == null || value.trim() === '') return '—';
   const number = Number(value);

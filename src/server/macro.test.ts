@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseCalendar } from '@/providers/calendar';
-import { explainRelease, formatPrint } from './macro';
+import { explainRelease, formatPrint, releaseTopic } from './macro';
 
 test('CPI, PPI, and payrolls each get their own note', () => {
   assert.match(explainRelease('CPI (Consumer Price Index)').about, /Consumer Price Index/);
@@ -25,6 +25,14 @@ test('local GDP is not described as the national release', () => {
   const national = explainRelease('GDP (Second Estimate) and Corporate Profits, 3rd Quarter 2026');
   assert.match(local.affects, /almost never/);
   assert.match(national.about, /advance estimate/);
+});
+
+test('PCE is marked as inflation and a county income release is not', () => {
+  assert.equal(releaseTopic('Personal Income and Outlays (PCE)'), 'Inflation');
+  assert.equal(releaseTopic('CPI (Consumer Price Index)'), 'Inflation');
+  assert.equal(releaseTopic('GDP by County and Personal Income by County, 2025'), null);
+  assert.equal(releaseTopic('GDP (Third Estimate), State Personal Income, 3rd Quarter 2026'), null);
+  assert.equal(releaseTopic('Initial Jobless Claims'), null);
 });
 
 test('an unknown release still gets a plain note', () => {

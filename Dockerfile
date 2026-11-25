@@ -21,4 +21,4 @@ COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
 EXPOSE 3000
 # Railway sets HOSTNAME to the container id, which makes Next bind an address the proxy cannot reach.
-CMD ["sh", "-c", "export HOSTNAME=0.0.0.0; exec node --experimental-sqlite --disable-warning=ExperimentalWarning server.js"]
+CMD ["sh", "-c", "export HOSTNAME=0.0.0.0; exec node --experimental-sqlite --use-system-ca --disable-warning=ExperimentalWarning server.js"]
