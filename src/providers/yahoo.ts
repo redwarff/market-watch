@@ -110,6 +110,11 @@ export class YahooHistory implements HistorySource {
     return pacer.run(() => this.frontQuote(symbol));
   }
 
+  /** Index last price from the same free chart metadata. Used for the VIX readout. */
+  indexQuote(symbol: string): Promise<(Quote & { volume: number | null }) | null> {
+    return pacer.run(() => this.frontQuote(symbol));
+  }
+
   /** Regular session stays on Finnhub. This is only the pre-market or after-hours print. */
   extendedQuote(symbol: string): Promise<ExtendedQuote | null> {
     return pacer.run(() => this.sessionQuote(symbol));
@@ -136,7 +141,7 @@ export class YahooHistory implements HistorySource {
         }[];
       };
     };
-    if (body.chart?.error) throw new Error(body.chart.error.description || 'Yahoo futures quote failed.');
+    if (body.chart?.error) throw new Error(body.chart.error.description || 'Yahoo quote failed.');
     const meta = body.chart?.result?.[0]?.meta;
     const price = finite(meta?.regularMarketPrice);
     const ts = seconds(meta?.regularMarketTime);

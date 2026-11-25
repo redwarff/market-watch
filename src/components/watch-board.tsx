@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { FUTURES } from '@/lib/futures';
-import { changeOf, formatAgo, formatCompact, formatPct, formatPrice, formatSignedMoney, sessionLabel, tone } from '@/lib/format';
+import { changeOf, formatAgo, formatCompact, formatNumber, formatPct, formatPrice, formatSignedMoney, sessionLabel, tone } from '@/lib/format';
 import type { AlertKind, WatchRow } from '@/lib/types';
 import { useStream, type StreamEvent } from './use-stream';
 
@@ -15,6 +15,19 @@ type Status = {
   wsDetail: string;
 };
 
+type VixQuote = {
+  price: number;
+  prevClose: number | null;
+  change: number | null;
+  pct: number | null;
+  ts: number;
+};
+
+function formatPoints(value: number): string {
+  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
+  return `${sign}${formatNumber(Math.abs(value))}`;
+}
+
 const KIND_LABEL: Record<AlertKind, string> = {
   limit: 'Limit',
   daily_move: 'Daily',
@@ -24,6 +37,7 @@ const KIND_LABEL: Record<AlertKind, string> = {
 export function WatchBoard() {
   const router = useRouter();
   const [rows, setRows] = useState<WatchRow[] | null>(null);
+  const [vix, setVix] = useState<VixQuote | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -35,10 +49,11 @@ export function WatchBoard() {
 
   async function load() {
     const [watch, nextStatus] = await Promise.all([
-      api<{ rows: WatchRow[] }>('/api/watch'),
+      api<{ rows: WatchRow[]; vix: VixQuote | null }>('/api/watch'),
       api<Status>('/api/status'),
     ]);
     setRows(watch.rows);
+    setVix(watch.vix ?? null);
     setStatus(nextStatus);
   }
 
@@ -136,7 +151,23 @@ export function WatchBoard() {
               {feedLabel}
             </span>
           </div>
-          <h1 style={{ margin: 0, fontSize: '1.35rem' }}>Watch</h1>
+          <div className="watch-title">
+            <h1 style={{ margin: 0, fontSize: '1.35rem' }}>Watch</h1>
+            <p className="vix" title="CBOE Volatility Index">
+              <span className="kicker">VIX</span>
+              {vix ? (
+                <>
+                  <strong>{formatNumber(vix.price)}</strong>
+                  <span className={tone(vix.change)}>
+                    {vix.change != null ? formatPoints(vix.change) : '—'}
+                    {vix.pct != null ? ` ${formatPct(vix.pct)}` : ''}
+                  </span>
+                </>
+              ) : (
+                <span className="muted">—</span>
+              )}
+            </p>
+          </div>
         </div>
         <button className="btn btn-primary" type="button" onClick={() => setAdding(true)}>
           Add ticker

@@ -168,6 +168,27 @@ label.stack, .stack {
 
 .page-head { margin-bottom: 0.9rem; }
 
+.watch-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.vix {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.vix strong {
+  font-size: 1.15rem;
+  font-weight: 650;
+}
+
 .banner {
   border: 1px solid #4a4030;
   background: #221c14;
